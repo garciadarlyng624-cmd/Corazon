@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Romantic 3D Heart - Written in the Stars</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #05020a;
+            font-family: 'Inter', sans-serif;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: none;
+            text-align: center;
+            color: #ffffff;
+            text-shadow: 0 0 15px rgba(255, 100, 150, 0.8), 0 0 30px rgba(255, 50, 100, 0.5);
+        }
+        .title-text {
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            font-weight: 300;
+            letter-spacing: 0.25em;
+            margin-bottom: 0.5rem;
+            color: #ffeef2;
+            opacity: 0.95;
+        }
+        .subtitle-text {
+            font-size: clamp(0.75rem, 2vw, 1rem);
+            font-weight: 400;
+            letter-spacing: 0.4em;
+            text-transform: uppercase;
+            color: #ffb3c6;
+            opacity: 0.85;
+        }
+        /* EKG Pulse Line Container Styles */
+        #ekg-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #05020a;
+            transition: opacity 1.5s ease-in-out;
+            pointer-events: none;
+        }
+        #ekg-canvas {
+            width: 80vw;
+            height: 150px;
+        }
+        .instructions {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            text-align: center;
+            z-index: 3;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.8rem;
+            letter-spacing: 0.1em;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ekg-container">
+        <canvas id="ekg-canvas"></canvas>
+    </div>
+
+    <div class="overlay" id="main-overlay" style="opacity: 0; transition: opacity 2s ease-in-out;">
+        <div class="title-text">YOU & ME</div>
+        <div class="subtitle-text">WRITTEN IN THE STARS</div>
+    </div>
+
+    <div class="instructions" id="instructions" style="opacity: 0; transition: opacity 2s ease-in-out;">Click and drag to rotate • Scroll to zoom</div>
+
+    <script>
+        // Main Three.js Scene Setup
+        let scene, camera, renderer, heartParticles, backgroundStars;
+        let clock = new THREE.Clock();
+        let mouseX = 0, mouseY = 0;
+        let targetRotationX = 0, targetRotationY = 0;
+        let windowHalfX = window.innerWidth / 2;
+        let windowHalfY = window.innerHeight / 2;
+        let ekgFinished = false;
+
+        // EKG Animation Variables
+        let ekgCanvas, ekgCtx;
+        let ekgProgress = 0;
+        const ekgPoints = [];
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x05020a, 0.015);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 25;
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            // Setup EKG Canvas
+            ekgCanvas = document.getElementById('ekg-canvas');
+            ekgCanvas.width = window.innerWidth * 0.8;
+            ekgCanvas.height = 150;
+            ekgCtx = ekgCanvas.getContext('2d');
+            generateEKGPath();
+
+            // Create Starry Background
+            createBackgroundStars();
+
+            // Create 3D Particle Heart
+            createHeartParticles();
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousemove', onDocumentMouseMove);
+            document.addEventListener('touchmove', onTouchMove, { passive: false });
+
+            // Start EKG animation sequence
+            requestAnimationFrame(animateEKG);
+        }
+
+        function generateEKGPath() {
+            const w = ekgCanvas.width;
+            const h = ekgCanvas.height;
+            const midY = h / 2;
+            
+            // Build a realistic heartbeat sequence across canvas width
+            const segments = 4;
+            const segWidth = w / segments;
+
+            ekgPoints.push({x: 0, y: midY});
+            
+            for (let s = 0; s < segments; s++) {
+                let startX = s * segWidth;
+                // Flat baseline
+                ekgPoints.push({x: startX + segWidth * 0.2, y: midY});
+                // P wave
+                ekgPoints.push({x: startX + segWidth * 0.3, y: midY - 10});
+                ekgPoints.push({x: startX + segWidth * 0.4, y: midY});
+                // QRS complex (sharp spike)
+                ekgPoints.push({x: startX + segWidth * 0.45, y: midY + 15});
+                ekgPoints.push({x: startX + segWidth * 0.50, y: midY - 65}); // Peak
+                ekgPoints.push({x: startX + segWidth * 0.55, y: midY + 30}); // Trough
+                ekgPoints.push({x: startX + segWidth * 0.60, y: midY});
+                // T wave
+                ekgPoints.push({x: startX + segWidth * 0.75, y: midY - 18});
+                ekgPoints.push({x: startX + segWidth * 0.85, y: midY});
+                // Baseline rest
+                ekgPoints.push({x: startX + segWidth, y: midY});
+            }
+        }
+
+        function animateEKG() {
+            if (ekgFinished) return;
+
+            ekgCtx.clearRect(0, 0, ekgCanvas.width, ekgCanvas.height);
+            
+            ekgCtx.strokeStyle = '#ff3366';
+            ekgCtx.lineWidth = 3;
+            ekgCtx.shadowColor = '#ff3366';
+            ekgCtx.shadowBlur = 15;
+            ekgCtx.beginPath();
+
+            let currentX = ekgProgress * ekgCanvas.width;
+            let drawn = false;
+
+            for (let i = 0; i < ekgPoints.length - 1; i++) {
+                let p1 = ekgPoints[i];
+                let p2 = ekgPoints[i+1];
+
+                if (currentX >= p1.x) {
+                    ekgCtx.moveTo(p1.x, p1.y);
+                    if (currentX >= p2.x) {
+                        ekgCtx.lineTo(p2.x, p2.y);
+                    } else {
+                        let ratio = (currentX - p1.x) / (p2.x - p1.x);
+                        let interpY = p1.y + (p2.y - p1.y) * ratio;
+                        ekgCtx.lineTo(currentX, interpY);
+                        drawn = true;
+                        break;
+                    }
+                }
+            }
+            ekgCtx.stroke();
+
+            ekgProgress += 0.015; // Speed of EKG line sweep
+
+            if (ekgProgress <= 1.05) {
+                requestAnimationFrame(animateEKG);
+            } else {
+                // Fade out EKG and reveal 3D Heart scene
+                ekgFinished = true;
+                const ekgContainer = document.getElementById('ekg-container');
+                ekgContainer.style.opacity = '0';
+                setTimeout(() => {
+                    ekgContainer.style.display = 'none';
+                    document.getElementById('main-overlay').style.opacity = '1';
+                    document.getElementById('instructions').style.opacity = '1';
+                }, 1500);
+
+                // Start Main 3D Scene Loop
+                animate();
+            }
+        }
+
+        // Generate Background Stars / Floating Particles
+        function createBackgroundStars() {
+            const particleCount = 1200;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 80;
+                positions[i + 1] = (Math.random() - 0.5) * 80;
+                positions[i + 2] = (Math.random() - 0.5) * 80;
+
+                const mix = Math.random();
+                colors[i] = 1.0;
+                colors[i + 1] = 0.6 + mix * 0.4;
+                colors[i + 2] = 0.8 + mix * 0.2;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 16;
+            canvas.height = 16;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(8, 8, 0, 8, 8, 8);
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(0.5, 'rgba(255,150,180,0.5)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 16, 16);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.PointsMaterial({
+                size: 0.6,
+                vertexColors: true,
+                map: texture,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            backgroundStars = new THREE.Points(geometry, material);
+            scene.add(backgroundStars);
+        }
+
+        // Generate Parametric 3D Heart Shape with Particles
+        function createHeartParticles() {
+            const particleCount = 3500;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+
+            let pCount = 0;
+            while (pCount < particleCount) {
+                const t = Math.random() * Math.PI * 2;
+                const u = Math.random() * Math.PI;
+
+                let x = 16 * Math.pow(Math.sin(t), 3);
+                let y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                let z = (Math.random() - 0.5) * 6 * Math.sin(u);
+
+                x *= 0.55;
+                y *= 0.55;
+                z *= 0.55;
+
+                positions[pCount * 3] = x;
+                positions[pCount * 3 + 1] = y;
+                positions[pCount * 3 + 2] = z;
+
+                const colorFactor = (y + 10) / 20; 
+                colors[pCount * 3] = 1.0;
+                colors[pCount * 3 + 1] = 0.1 + colorFactor * 0.3;
+                colors[pCount * 3 + 2] = 0.3 + colorFactor * 0.4;
+
+                pCount++;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 32;
+            canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(0.3, 'rgba(255,50,100,0.9)');
+            gradient.addColorStop(0.7, 'rgba(200,20,80,0.3)');
+            gradient.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 32, 32);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const material = new THREE.PointsMaterial({
+                size: 0.55,
+                vertexColors: true,
+                map: texture,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+        	heartParticles = new THREE.Points(geometry, material);
+            scene.add(heartParticles);
+        }
+
+        // Mouse & Touch Interaction Handlers
+        function onDocumentMouseMove(event) {
+            mouseX = (event.clientX - windowHalfX) * 0.0005;
+            mouseY = (event.clientY - windowHalfY) * 0.0005;
+        }
+
+        function onTouchMove(event) {
+            if (event.touches.length === 1) {
+                mouseX = (event.touches[0].clientX - windowHalfX) * 0.001;
+                mouseY = (event.touches[0].clientY - windowHalfY) * 0.001;
+            }
+        }
+
+        function onWindowResize() {
+            windowHalfX = window.innerWidth / 2;
+            windowHalfY = window.innerHeight / 2;
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Main Animation Render Loop with Natural Smooth Heartbeat Pulse
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (!ekgFinished) return;
+
+            const elapsedTime = clock.getElapsedTime();
+
+            // Smooth natural heartbeat pulsation using standard rhythmic sine combination (lub-dub rhythm)
+            const beatSpeed = 3.2;
+            const t = elapsedTime * beatSpeed;
+            const pulse = 1.0 + 0.07 * Math.max(0, Math.sin(t * Math.PI * 2)) + 0.03 * Math.max(0, Math.sin(t * Math.PI * 2 - 0.8));
+
+            if (heartParticles) {
+                heartParticles.scale.set(pulse, pulse, pulse);
+                
+                // Calm, stable, and fluid rotation with gentle mouse response
+                targetRotationX = mouseY * 0.8;
+                targetRotationY = elapsedTime * 0.15 + mouseX * 0.8;
+
+                heartParticles.rotation.y += (targetRotationY - heartParticles.rotation.y) * 0.05;
+                heartParticles.rotation.x += (targetRotationX - heartParticles.rotation.x) * 0.05;
+            }
+
+            // Slowly drift background starry field
+            if (backgroundStars) {
+                backgroundStars.rotation.y = elapsedTime * 0.02;
+                backgroundStars.rotation.x = elapsedTime * 0.01;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
